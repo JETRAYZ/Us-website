@@ -2,7 +2,15 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
+export async function GET() {
+  return await handleSeed();
+}
+
 export async function POST() {
+  return await handleSeed();
+}
+
+async function handleSeed() {
   const supabase = createServiceRoleClient();
 
   // Check if profiles exist
