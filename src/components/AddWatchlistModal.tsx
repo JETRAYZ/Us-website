@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client';
 import BottomSheet from './BottomSheet';
 import { Check, Clapperboard, Popcorn, Eye, Search, Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
-import { useDebounce } from '@/hooks/useDebounce'; // Assuming we have it, or I'll add it. Wait, I'll just use a timeout.
 
 interface AddWatchlistModalProps {
   isOpen: boolean;

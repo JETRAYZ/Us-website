@@ -34,6 +34,8 @@ export interface Event {
   type: 'errand' | 'date' | 'important';
   created_by: string;
   created_at: string;
+  is_virtual?: boolean;
+  virtual_color?: string;
 }
 
 export interface WheelItem {

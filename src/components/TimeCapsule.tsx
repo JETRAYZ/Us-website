@@ -6,6 +6,7 @@ import { Lock, LockOpen, Plus, Trash2, Clock, Box } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { TimeCapsule as TimeCapsuleType } from '@/types/database';
 import AddCapsuleModal from './AddCapsuleModal';
+import ConfirmModal from './ConfirmModal';
 
 interface TimeCapsuleProps {
   userId: string;
@@ -15,20 +16,20 @@ export default function TimeCapsule({ userId }: TimeCapsuleProps) {
   const [capsules, setCapsules] = useState<TimeCapsuleType[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [now, setNow] = useState(new Date());
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [capsuleToDelete, setCapsuleToDelete] = useState<TimeCapsuleType | null>(null);
+  
   const supabase = createClient();
 
   useEffect(() => {
     fetchCapsules();
-
     const channel = supabase
       .channel('capsules-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'time_capsules' }, () => {
         fetchCapsules();
       })
       .subscribe();
-
     const timer = setInterval(() => setNow(new Date()), 60000);
-
     return () => {
       supabase.removeChannel(channel);
       clearInterval(timer);
@@ -50,25 +51,24 @@ export default function TimeCapsule({ userId }: TimeCapsuleProps) {
   const getTimeRemaining = (unlockDate: string) => {
     const target = new Date(unlockDate);
     const diff = target.getTime() - now.getTime();
-    
     if (diff <= 0) return null;
-
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
     if (days > 0) return `Opens in ${days}d ${hours}h`;
     if (hours > 0) return `Opens in ${hours}h ${minutes}m`;
     return `Opening soon!`;
   };
 
-  const handleDelete = async (capsule: TimeCapsuleType) => {
-    const { error } = await supabase.from('time_capsules').delete().eq('id', capsule.id);
+  const handleDelete = async () => {
+    if (!capsuleToDelete) return;
+    const { error } = await supabase.from('time_capsules').delete().eq('id', capsuleToDelete.id);
     if (!error) {
-      if (capsule.image_url) {
-        const path = capsule.image_url.split('/time-capsules/')[1];
+      if (capsuleToDelete.image_url) {
+        const path = capsuleToDelete.image_url.split('/time-capsules/')[1];
         if (path) await supabase.storage.from('time-capsules').remove([path]);
       }
+      setCapsuleToDelete(null);
       fetchCapsules();
     }
   };
@@ -104,7 +104,6 @@ export default function TimeCapsule({ userId }: TimeCapsuleProps) {
                     : 'bg-netflix-card/80 backdrop-blur-sm'
                 }`}
               >
-                {/* Header */}
                 <div className="flex items-center justify-between mb-4 relative z-10">
                   <div className="flex items-center gap-2">
                     {isUnlocked ? (
@@ -124,7 +123,6 @@ export default function TimeCapsule({ userId }: TimeCapsuleProps) {
                   </span>
                 </div>
 
-                {/* Content Area */}
                 <div className="relative rounded-xl overflow-hidden mb-3">
                   {!isUnlocked && (
                     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/10 backdrop-blur-md">
@@ -132,7 +130,6 @@ export default function TimeCapsule({ userId }: TimeCapsuleProps) {
                        <span className="text-foreground/60 text-[10px] font-black uppercase tracking-widest">Unlocks in...</span>
                     </div>
                   )}
-
                   <div className={isUnlocked ? "" : "blur-sm"}>
                     {capsule.image_url && (
                       <img src={capsule.image_url} className="w-full h-40 object-cover rounded-xl" />
@@ -143,35 +140,26 @@ export default function TimeCapsule({ userId }: TimeCapsuleProps) {
                       </p>
                     )}
                   </div>
-
-                  {isUnlocked && (
-                     <motion.div 
-                        initial={{ x: '-100%' }}
-                        animate={{ x: '200%' }}
-                        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                        className="absolute inset-0 z-10 pointer-events-none bg-gradient-to-r from-transparent via-white/5 to-transparent w-1/2 rotate-12"
-                     />
-                  )}
                 </div>
 
-                {/* Footer Info */}
                 <div className="flex justify-between items-end relative z-10">
                   <div className="flex flex-col gap-0.5">
                     <span className="text-[10px] text-secondary-text">
                       {isUnlocked ? 'Opened on' : 'Unlocks'} {new Date(capsule.unlock_date).toLocaleDateString()}
                     </span>
                   </div>
-                  
                   {!isUnlocked && (
                     <div className={`flex items-center gap-1.5 font-bold text-xs ${isUrgent ? 'text-netflix-red animate-pulse' : 'text-secondary-text'}`}>
                       <Clock size={12} />
                       {timeRemaining}
                     </div>
                   )}
-
                   {capsule.author_id === userId && (
                     <button 
-                      onClick={() => handleDelete(capsule)}
+                      onClick={() => {
+                        setCapsuleToDelete(capsule);
+                        setIsConfirmOpen(true);
+                      }}
                       className="p-1.5 text-secondary-text/30 hover:text-netflix-red transition-colors"
                     >
                       <Trash2 size={16} />
@@ -193,6 +181,19 @@ export default function TimeCapsule({ userId }: TimeCapsuleProps) {
         onClose={() => setIsAddModalOpen(false)}
         userId={userId}
         onAdded={fetchCapsules}
+      />
+
+      <ConfirmModal
+        isOpen={isConfirmOpen}
+        onClose={() => {
+          setIsConfirmOpen(false);
+          setCapsuleToDelete(null);
+        }}
+        onConfirm={handleDelete}
+        title="Delete Capsule?"
+        message="คุณต้องการลบ Time Capsule นี้ใช่ไหม? (หากลบแล้วข้อมูลจะหายถาวร)"
+        confirmText="Delete"
+        cancelText="Cancel"
       />
     </section>
   );

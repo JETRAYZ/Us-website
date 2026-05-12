@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Battery, LogOut, Camera, Loader2, Save, Palette, Check, Bell, BellOff } from 'lucide-react';
+import { Camera, LogOut, Loader2, Save, Palette, Check, Bell, BellOff } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Profile } from '@/types/database';
 import BottomSheet from './BottomSheet';
@@ -21,12 +21,12 @@ export default function Navbar({ activeUser }: NavbarProps) {
   
   const [myMood, setMyMood] = useState(100);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
+  const [notifsMuted, setNotifsMuted] = useState(false);
   
   // Profile Edit State
   const [editName, setEditName] = useState('');
   const [previewAvatar, setPreviewAvatar] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  
   const [isSaving, setIsSaving] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -41,6 +41,12 @@ export default function Navbar({ activeUser }: NavbarProps) {
       if (me) {
         setMyMood(me.mood_percent);
         setEditName(me.name);
+        
+        // Auto-set theme based on role if no theme is saved
+        if (!localStorage.getItem('theme')) {
+          const defaultTheme = me.role === 'admin' ? 'classic' : 'sweet-pink';
+          handleSelectTheme(defaultTheme);
+        }
       }
     }
   }, [activeUser.userId, supabase]);
@@ -53,7 +59,11 @@ export default function Navbar({ activeUser }: NavbarProps) {
       const savedTheme = localStorage.getItem('theme');
       if (savedTheme) {
         setCurrentTheme(savedTheme);
+        document.documentElement.setAttribute('data-theme', savedTheme);
       }
+      
+      const muted = localStorage.getItem('notifs_muted') === 'true';
+      setNotifsMuted(muted);
     } catch (e) {}
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -72,6 +82,24 @@ export default function Navbar({ activeUser }: NavbarProps) {
       supabase.removeChannel(channel);
     };
   }, [fetchProfiles, supabase]);
+
+  const toggleNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+
+    if (Notification.permission === 'default') {
+      const res = await Notification.requestPermission();
+      setNotifPermission(res);
+      if (res === 'granted') {
+        new Notification('สำเร็จแล้ว! 🎉', { body: 'เปิดแจ้งเตือนเรียบร้อยจ้า' });
+      }
+    } else if (Notification.permission === 'granted') {
+      const newState = !notifsMuted;
+      setNotifsMuted(newState);
+      localStorage.setItem('notifs_muted', String(newState));
+    } else {
+      alert('คุณได้ปิดการแจ้งเตือนในระดับเบราว์เซอร์ไว้ กรุณาเปิดในการตั้งค่าเบราว์เซอร์ก่อนครับ');
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('activeUser');
@@ -101,9 +129,8 @@ export default function Navbar({ activeUser }: NavbarProps) {
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-          const max = 400; // Small size for avatars
+          const max = 400;
 
-          // Crop to square before compressing
           const size = Math.min(width, height);
           const startX = (width - size) / 2;
           const startY = (height - size) / 2;
@@ -156,10 +183,7 @@ export default function Navbar({ activeUser }: NavbarProps) {
       .eq('id', activeUser.userId);
 
     if (!error) {
-      // Update local state manually for immediate feedback
       setProfiles(prev => prev.map(p => p.id === activeUser.userId ? { ...p, ...updates } : p));
-      
-      // Update local storage so the name persists on refresh
       try {
         const storedUserStr = localStorage.getItem('activeUser');
         if (storedUserStr) {
@@ -171,7 +195,6 @@ export default function Navbar({ activeUser }: NavbarProps) {
 
       setIsEditProfileOpen(false);
       setPreviewAvatar(null);
-      // Dispatch an event just in case other components depend on the name change
       window.dispatchEvent(new CustomEvent('profile_updated'));
     }
     
@@ -184,13 +207,6 @@ export default function Navbar({ activeUser }: NavbarProps) {
       localStorage.setItem('theme', themeId);
       document.documentElement.setAttribute('data-theme', themeId);
     } catch (e) {}
-  };
-
-  const requestNotificationPermission = async () => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      const permission = await Notification.requestPermission();
-      setNotifPermission(permission);
-    }
   };
 
   const themes = [
@@ -209,24 +225,25 @@ export default function Navbar({ activeUser }: NavbarProps) {
   return (
     <>
       <nav className="fixed top-0 left-0 right-0 z-50 h-14 max-w-[430px] mx-auto bg-netflix-dark/95 backdrop-blur-sm border-b border-white/5 flex items-center justify-between px-4">
-        {/* Logo */}
         <div className="flex items-center gap-1">
           <span className="text-netflix-red font-bold text-lg">US Space</span>
         </div>
 
-        {/* Actions */}
         <div className="flex items-center gap-3">
-          {/* Notification Toggle */}
+          {/* Notification Toggle - Updated Bell Logic */}
           <button
-            onClick={requestNotificationPermission}
-            className={`w-8 h-8 rounded-full border border-white/10 flex items-center justify-center bg-black/40 transition-colors ${
-              notifPermission === 'granted' ? 'text-green-500' : 'text-foreground'
+            onClick={toggleNotifications}
+            className={`w-8 h-8 rounded-full border border-white/10 flex items-center justify-center bg-black/40 transition-all ${
+              notifPermission === 'granted' && !notifsMuted ? 'text-[#2ecc71]' : 'text-secondary-text'
             }`}
           >
-            {notifPermission === 'granted' ? <Bell size={14} fill="currentColor" /> : <BellOff size={14} />}
+            {notifPermission === 'granted' && !notifsMuted ? (
+              <Bell size={14} fill="currentColor" />
+            ) : (
+              <BellOff size={14} />
+            )}
           </button>
 
-          {/* Theme Switcher */}
           <button
             onClick={() => setIsThemeModalOpen(true)}
             className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center bg-black/40 hover:border-netflix-red transition-colors text-foreground"
@@ -234,7 +251,6 @@ export default function Navbar({ activeUser }: NavbarProps) {
             <Palette size={14} />
           </button>
 
-          {/* User Avatar -> Opens Edit Profile */}
           <button 
             onClick={() => {
               if (me) setEditName(me.name);
@@ -252,7 +268,6 @@ export default function Navbar({ activeUser }: NavbarProps) {
         </div>
       </nav>
 
-      {/* Mood Update Bottom Sheet */}
       <BottomSheet
         isOpen={isMoodModalOpen}
         onClose={() => setIsMoodModalOpen(false)}
@@ -264,7 +279,6 @@ export default function Navbar({ activeUser }: NavbarProps) {
                {myMood}%
              </span>
           </div>
-
           <div className="w-full space-y-6">
             <input
               type="range"
@@ -274,14 +288,12 @@ export default function Navbar({ activeUser }: NavbarProps) {
               onChange={(e) => setMyMood(parseInt(e.target.value))}
               className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-netflix-red"
             />
-            
             <div className="flex justify-between text-xs text-secondary-text font-medium px-1">
               <span>CRITICAL</span>
               <span>NEUTRAL</span>
               <span>PEAK</span>
             </div>
           </div>
-
           <button
             onClick={handleSaveMood}
             disabled={isSaving}
@@ -292,14 +304,12 @@ export default function Navbar({ activeUser }: NavbarProps) {
         </div>
       </BottomSheet>
 
-      {/* Edit Profile Bottom Sheet */}
       <BottomSheet
         isOpen={isEditProfileOpen}
         onClose={() => setIsEditProfileOpen(false)}
         title="Edit Profile"
       >
         <div className="flex flex-col items-center gap-6 py-4">
-          {/* Avatar Upload */}
           <div className="relative">
             <div 
               onClick={() => fileInputRef.current?.click()}
@@ -328,7 +338,6 @@ export default function Navbar({ activeUser }: NavbarProps) {
               className="hidden" 
             />
           </div>
-
           <div className="w-full space-y-2">
             <label className="text-sm font-medium text-secondary-text flex items-center justify-between">
               Display Name
@@ -343,7 +352,6 @@ export default function Navbar({ activeUser }: NavbarProps) {
               maxLength={20}
             />
           </div>
-
           <button
             onClick={handleSaveProfile}
             disabled={isSavingProfile || !editName.trim()}
@@ -351,8 +359,6 @@ export default function Navbar({ activeUser }: NavbarProps) {
           >
             {isSavingProfile ? <Loader2 className="animate-spin" size={20} /> : <><Save size={20} /> Save Changes</>}
           </button>
-
-          {/* Moved Logout Button */}
           <div className="w-full border-t border-white/5 mt-4 pt-6">
             <button
               onClick={handleLogout}
@@ -364,7 +370,6 @@ export default function Navbar({ activeUser }: NavbarProps) {
         </div>
       </BottomSheet>
 
-      {/* Theme Selector Bottom Sheet */}
       <BottomSheet
         isOpen={isThemeModalOpen}
         onClose={() => setIsThemeModalOpen(false)}

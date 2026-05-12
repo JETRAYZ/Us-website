@@ -27,18 +27,15 @@ export default function AddCapsuleModal({ isOpen, onClose, userId, onAdded }: Ad
 
     setIsUploading(true);
     try {
-      const fileName = `${userId}/capsule-${Date.now()}.jpg`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('time-capsules')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage.from('time-capsules').getPublicUrl(fileName);
-      setImageUrl(publicUrl);
+      // Compress and convert to Base64 (Same logic as LocketSnap for consistency)
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageUrl(reader.result as string);
+        setIsUploading(false);
+      };
+      reader.readAsDataURL(file);
     } catch (err) {
       console.error('Upload error:', err);
-    } finally {
       setIsUploading(false);
     }
   };

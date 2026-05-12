@@ -73,7 +73,7 @@ export default function PostIt({ userId }: PostItProps) {
       .select('*')
       .eq('is_read', false)
       .neq('author_id', userId)
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: true })
       .limit(1);
     
     if (data && data.length > 0) {

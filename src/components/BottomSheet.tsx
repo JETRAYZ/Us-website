@@ -7,7 +7,7 @@ import { useEffect } from 'react';
 interface BottomSheetProps {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
+  title: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -33,7 +33,7 @@ export default function BottomSheet({ isOpen, onClose, title, children }: Bottom
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] bg-background/60 backdrop-blur-sm"
           />
 
           {/* Sheet */}
@@ -49,9 +49,9 @@ export default function BottomSheet({ isOpen, onClose, title, children }: Bottom
               <div className="w-12 h-1.5 bg-secondary-text/30 rounded-full" />
             </div>
 
-            <div className="px-6 pb-4 flex justify-between items-center border-b border-white/5">
+            <div className="px-6 pb-4 flex justify-between items-center border-b border-foreground/5">
               <h3 className="text-xl font-bold text-foreground">{title}</h3>
-              <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-secondary-text transition-colors">
+              <button onClick={onClose} className="p-2 hover:bg-foreground/5 rounded-full text-secondary-text transition-colors">
                 <X size={20} />
               </button>
             </div>

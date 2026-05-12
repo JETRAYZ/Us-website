@@ -11,7 +11,7 @@ export default function MonthlyRecap() {
   const [snaps, setSnaps] = useState<Snap[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [prevMonthName, setPrevMonthName] = useState('');
-  const [selectedDate, setSelectedDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1));
+  const [selectedDate, setSelectedDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [availableMonths, setAvailableMonths] = useState<Date[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
@@ -48,53 +48,52 @@ export default function MonthlyRecap() {
     setIsLoading(false);
   };
 
+  const now = new Date();
+  const lastDayOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
+  const isLocked = now < lastDayOfMonth;
+
   return (
     <section className="px-4 mt-6">
-      <div className="flex flex-col gap-3 mb-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-foreground font-bold text-lg flex items-center gap-2">Memories <Film size={20} /></h2>
+        {/* Simplified Header */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-foreground font-bold text-lg flex items-center gap-2">Monthly Recap <Film size={20} /></h2>
+          <div className="px-3 py-1 bg-netflix-red/20 rounded-full border border-netflix-red/30">
+             <span className="text-netflix-red text-[10px] font-black uppercase tracking-widest">{selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
+          </div>
         </div>
-        
-        {/* Month Selector */}
-        <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar snap-x">
-          {availableMonths.map((date) => {
-            const isSelected = date.getMonth() === selectedDate.getMonth() && date.getFullYear() === selectedDate.getFullYear();
-            return (
-              <button
-                key={date.getTime()}
-                onClick={() => setSelectedDate(date)}
-                className={`flex-shrink-0 snap-start px-4 py-2 rounded-full text-xs font-bold transition-all border ${
-                  isSelected 
-                    ? 'bg-netflix-red border-netflix-red text-white shadow-lg shadow-netflix-red/20' 
-                    : 'bg-netflix-card border-white/5 text-secondary-text hover:text-foreground'
-                }`}
-              >
-                {date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
       <button
-        onClick={() => snaps.length > 0 && setIsOpen(true)}
-        disabled={isLoading || snaps.length === 0}
-        className={`w-full relative overflow-hidden rounded-2xl p-6 flex flex-col items-center justify-center gap-2 shadow-2xl transition-all active:scale-[0.98] ${
-          snaps.length > 0 
+        onClick={() => !isLocked && snaps.length > 0 && setIsOpen(true)}
+        disabled={isLoading || snaps.length === 0 || isLocked}
+        className={`w-full mt-4 relative overflow-hidden rounded-2xl p-6 flex flex-col items-center justify-center gap-2 shadow-2xl transition-all active:scale-[0.98] ${
+          snaps.length > 0 && !isLocked
             ? 'bg-gradient-to-br from-netflix-red to-netflix-red/80 border border-white/20' 
             : 'bg-netflix-card border border-white/5 opacity-50'
         }`}
       >
-        <Film size={36} className="text-white mb-2" />
-        <div className="flex items-center gap-2">
-          <span className="text-foreground font-black text-xl tracking-tight">Relive {selectedDate.toLocaleDateString('en-US', { month: 'long' })}</span>
-          <Play size={20} className="fill-white text-foreground" />
-        </div>
-        <p className="text-foreground/70 text-xs font-bold uppercase tracking-widest">
-          {snaps.length > 0 ? `${snaps.length} memories captured` : `No memories from ${prevMonthName} yet`}
-        </p>
+        {isLocked ? (
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mb-1">
+              <Film size={24} className="text-white/40" />
+            </div>
+            <span className="text-foreground/40 font-bold text-sm uppercase tracking-widest italic">
+              Locked until {lastDayOfMonth.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </span>
+          </div>
+        ) : (
+          <>
+            <Film size={36} className="text-white mb-2" />
+            <div className="flex items-center gap-2">
+              <span className="text-foreground font-black text-xl tracking-tight">Relive {selectedDate.toLocaleDateString('en-US', { month: 'long' })}</span>
+              <Play size={20} className="fill-white text-foreground" />
+            </div>
+            <p className="text-foreground/70 text-xs font-bold uppercase tracking-widest">
+              {snaps.length > 0 ? `${snaps.length} memories captured` : `No memories from ${prevMonthName} yet`}
+            </p>
+          </>
+        )}
 
-        {snaps.length > 0 && (
+        {snaps.length > 0 && !isLocked && (
           <motion.div 
             animate={{ x: ['-100%', '200%'] }}
             transition={{ duration: 3, repeat: Infinity, ease: "linear" }}

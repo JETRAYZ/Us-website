@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Play, CheckCircle2, Clock, Trash2, ChevronRight, X, Check, Clapperboard, Popcorn, Eye } from 'lucide-react';
+import { Plus, Play, CheckCircle2, Trash2, X, Check, Clapperboard, Popcorn, Eye } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { WatchlistItem } from '@/types/database';
 import AddWatchlistModal from './AddWatchlistModal';
 import BottomSheet from './BottomSheet';
+import ConfirmModal from './ConfirmModal';
 
 interface WatchlistProps {
   userId: string;
@@ -21,18 +22,19 @@ export default function Watchlist({ userId }: WatchlistProps) {
   const [selectedItem, setSelectedItem] = useState<WatchlistItem | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+  
   const supabase = createClient();
 
   useEffect(() => {
     fetchItems();
-
     const channel = supabase
       .channel('watchlist-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'watchlist_items' }, () => {
         fetchItems();
       })
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
@@ -85,10 +87,12 @@ export default function Watchlist({ userId }: WatchlistProps) {
     setIsUpdating(false);
   };
 
-  const handleDelete = async (id: string) => {
-    const { error } = await supabase.from('watchlist_items').delete().eq('id', id);
+  const handleDelete = async () => {
+    if (!itemToDelete) return;
+    const { error } = await supabase.from('watchlist_items').delete().eq('id', itemToDelete);
     if (!error) {
       setIsDetailOpen(false);
+      setItemToDelete(null);
       fetchItems();
     }
   };
@@ -105,7 +109,6 @@ export default function Watchlist({ userId }: WatchlistProps) {
         </button>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-2 px-4 overflow-x-auto hide-scrollbar mb-4">
         {['All', 'waiting', 'watching', 'done'].map((s) => (
           <button
@@ -125,7 +128,6 @@ export default function Watchlist({ userId }: WatchlistProps) {
         ))}
       </div>
 
-      {/* Carousel */}
       <div className="flex gap-3 px-4 pb-4 overflow-x-auto hide-scrollbar snap-x">
         {filteredItems.length > 0 ? (
           filteredItems.map((item) => (
@@ -143,13 +145,10 @@ export default function Watchlist({ userId }: WatchlistProps) {
                    <span className="text-[10px] text-secondary-text/50 uppercase font-bold">{item.title}</span>
                 </div>
               )}
-              
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" />
-              
               <div className={`absolute top-0 right-0 px-1.5 py-0.5 rounded-bl-lg text-[10px] flex items-center justify-center font-black text-foreground ${getStatusBadgeColor(item.status)} shadow-md`}>
                 {getStatusIcon(item.status)}
               </div>
-              
               <div className="absolute bottom-0 left-0 right-0 p-2">
                 <p className="text-foreground text-[10px] font-bold leading-tight line-clamp-2 drop-shadow-md">
                   {item.title}
@@ -203,7 +202,10 @@ export default function Watchlist({ userId }: WatchlistProps) {
 
               {selectedItem.added_by === userId && (
                 <button
-                  onClick={() => handleDelete(selectedItem.id)}
+                  onClick={() => {
+                    setItemToDelete(selectedItem.id);
+                    setIsConfirmOpen(true);
+                  }}
                   className="w-full py-4 border border-netflix-red/30 text-netflix-red text-sm font-bold rounded-xl flex items-center justify-center gap-2 active:bg-netflix-red/10 transition-all"
                 >
                   <Trash2 size={16} /> Remove from List
@@ -213,6 +215,19 @@ export default function Watchlist({ userId }: WatchlistProps) {
           </div>
         )}
       </BottomSheet>
+
+      <ConfirmModal
+        isOpen={isConfirmOpen}
+        onClose={() => {
+          setIsConfirmOpen(false);
+          setItemToDelete(null);
+        }}
+        onConfirm={handleDelete}
+        title="Remove Item?"
+        message="คุณต้องการลบรายการนี้ออกจาก Watchlist ใช่ไหม?"
+        confirmText="Remove"
+        cancelText="Keep it"
+      />
     </section>
   );
 }
