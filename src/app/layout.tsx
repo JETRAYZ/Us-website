@@ -13,6 +13,9 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "US Space",
   },
+  icons: {
+    apple: "/icon.png",
+  },
 };
 
 export const viewport: Viewport = {
