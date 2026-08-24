@@ -10,11 +10,14 @@ export async function GET() {
       .order('role', { ascending: true });
 
     if (error) {
+      console.error('[/api/profiles] Supabase error:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ profiles: data });
-  } catch (err) {
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ profiles: data ?? [] });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[/api/profiles] Caught exception:', message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

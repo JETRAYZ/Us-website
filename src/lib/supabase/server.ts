@@ -34,8 +34,24 @@ export async function createClient() {
 
 // Service role client for sensitive operations
 export function createServiceRoleClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    throw new Error(
+      `Missing Supabase env vars: URL=${url ? 'ok' : 'MISSING'}, SERVICE_ROLE_KEY=${key ? 'ok' : 'MISSING'}`
+    );
+  }
+
+  return createSupabaseClient(url, key, {
+    global: {
+      fetch: (input, init) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10_000); // 10s timeout
+        return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+          clearTimeout(timer)
+        );
+      },
+    },
+  });
 }
