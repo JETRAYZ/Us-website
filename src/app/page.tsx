@@ -23,11 +23,13 @@ export default function ProfileLockScreen() {
 
   const fetchProfiles = async () => {
     try {
-      const res = await fetch('/api/profiles');
-      const data = await res.json();
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('role', { ascending: true });
 
-      if (data.error) throw new Error(data.error);
-      if (data.profiles) setProfiles(data.profiles);
+      if (error) throw error;
+      if (data) setProfiles(data);
     } catch (err) {
       console.error('Error fetching profiles:', err);
     } finally {
