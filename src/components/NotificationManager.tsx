@@ -32,7 +32,7 @@ export default function NotificationManager({ userId }: { userId: string }) {
     };
     fetchPartnerName();
 
-    // Direct Realtime listener for foreground notifications
+    // Direct Realtime listener for Post-Its
     const postItChannel = supabase
       .channel(`post-its-notify-${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'post_its' }, (payload) => {
@@ -53,6 +53,7 @@ export default function NotificationManager({ userId }: { userId: string }) {
       })
       .subscribe();
 
+    // Direct Realtime listener for Calendar Events
     const calendarChannel = supabase
       .channel(`calendar-notify-${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'events' }, (payload) => {
@@ -65,9 +66,31 @@ export default function NotificationManager({ userId }: { userId: string }) {
       })
       .subscribe();
 
+    // Direct Realtime listener for Music Vibe updates
+    const profileChannel = supabase
+      .channel(`profile-notify-${userId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload) => {
+        if (payload.new && payload.new.id !== userId && payload.new.music_url && payload.new.music_url !== payload.old?.music_url) {
+          let songTitle = 'เพลงใหม่';
+          try {
+            const parsed = JSON.parse(payload.new.music_url);
+            if (parsed.trackName) {
+              songTitle = `"${parsed.trackName} - ${parsed.artistName}"`;
+            }
+          } catch (e) {}
+
+          sendNativeNotification(
+            `🎵 ${partnerNameRef.current} แชร์เพลงใหม่!`,
+            `${songTitle} แวะมาฟังด้วยกันนะ ✨`
+          );
+        }
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(postItChannel);
       supabase.removeChannel(calendarChannel);
+      supabase.removeChannel(profileChannel);
     };
   }, [userId, supabase]);
 

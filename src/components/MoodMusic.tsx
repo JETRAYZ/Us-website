@@ -6,6 +6,7 @@ import { Music, Search, Play, Pause, ChevronRight, Loader2, Moon, Disc } from 'l
 import { createClient } from '@/lib/supabase/client';
 import { Profile } from '@/types/database';
 import { getCachedProfiles } from '@/lib/profiles-cache';
+import { sendPushTrigger } from '@/lib/push-client';
 import BottomSheet from './BottomSheet';
 
 interface MoodMusicProps {
@@ -71,6 +72,30 @@ export default function MoodMusic({ activeUser }: MoodMusicProps) {
       setMusicUrl('');
       setSearchQuery('');
       setSearchResults([]);
+
+      // Send Web Push to partner
+      try {
+        const { data: allProfiles } = await supabase.from('profiles').select('id, name');
+        const partner = allProfiles?.find(p => p.id !== activeUser.userId);
+        const me = allProfiles?.find(p => p.id === activeUser.userId);
+        if (partner) {
+          let songTitle = 'เพลงใหม่';
+          try {
+            const parsed = JSON.parse(url);
+            if (parsed.trackName) {
+              songTitle = `"${parsed.trackName} - ${parsed.artistName}"`;
+            }
+          } catch (e) {}
+
+          await sendPushTrigger({
+            targetUserId: partner.id,
+            title: `🎵 ${me?.name || 'Partner'} แชร์เพลงใหม่!`,
+            body: `${songTitle} แวะมาฟังด้วยกันนะ ✨`,
+          });
+        }
+      } catch (e) {
+        console.error('Failed to send music push notification:', e);
+      }
     }
     setIsSaving(false);
   };

@@ -14,8 +14,23 @@ interface LocketSnapProps {
 
 let memoryCachedSnaps: Snap[] = [];
 
+function getInitialSnaps(): Snap[] {
+  if (memoryCachedSnaps.length > 0) return memoryCachedSnaps;
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('cached_snaps');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        memoryCachedSnaps = parsed;
+        return parsed;
+      }
+    } catch (e) {}
+  }
+  return [];
+}
+
 export default function LocketSnap({ userId }: LocketSnapProps) {
-  const [snaps, setSnaps] = useState<Snap[]>(() => memoryCachedSnaps);
+  const [snaps, setSnaps] = useState<Snap[]>(getInitialSnaps);
   const [isUploading, setIsUploading] = useState(false);
   const [captioningId, setCaptioningId] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
@@ -39,7 +54,7 @@ export default function LocketSnap({ userId }: LocketSnapProps) {
       .from('snaps')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(15);
     
     if (selectedDate) {
       const startOfDay = `${selectedDate}T00:00:00.000Z`;
@@ -50,7 +65,12 @@ export default function LocketSnap({ userId }: LocketSnapProps) {
     const { data } = await query;
     if (data) {
       setSnaps(data);
-      if (!selectedDate) memoryCachedSnaps = data;
+      if (!selectedDate) {
+        memoryCachedSnaps = data;
+        try {
+          localStorage.setItem('cached_snaps', JSON.stringify(data.slice(0, 5)));
+        } catch (e) {}
+      }
     }
   }, [supabase, selectedDate]);
 
@@ -139,13 +159,25 @@ export default function LocketSnap({ userId }: LocketSnapProps) {
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-          const max = 1080;
-          if (width > height) { if (width > max) { height *= max / width; width = max; } }
-          else { if (height > max) { width *= max / height; height = max; } }
-          canvas.width = width; canvas.height = height;
+          const max = 720;
+          if (width > height) {
+            if (width > max) {
+              height = Math.round((height * max) / width);
+              width = max;
+            }
+          } else {
+            if (height > max) {
+              width = Math.round((width * max) / height);
+              height = max;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
           const ctx = canvas.getContext('2d')!;
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, width, height);
-          canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 0.8);
+          canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', 0.72);
         };
         img.src = e.target?.result as string;
       };

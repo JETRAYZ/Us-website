@@ -10,6 +10,7 @@ import MoodMusic from '@/components/MoodMusic';
 import PostIt from '@/components/PostIt';
 import CountdownBanner from '@/components/CountdownBanner';
 import NotificationManager from '@/components/NotificationManager';
+import UnreadNoteOverlay from '@/components/UnreadNoteOverlay';
 import { LogOut, Heart, Sparkles, Camera, MessageSquareHeart, Compass } from 'lucide-react';
 
 // Heavy components loaded lazily — not in the initial bundle
@@ -54,6 +55,7 @@ export default function DashboardPage() {
     >
       <Navbar activeUser={user} />
       <NotificationManager userId={user.userId} />
+      <UnreadNoteOverlay userId={user.userId} />
 
       {/* D-Day & Next Event Banner (Always visible) */}
       <CountdownBanner activeUser={user} />
