@@ -19,6 +19,7 @@ export const metadata: Metadata = {
     title: "US Space",
   },
   icons: {
+    icon: "/icon.png",
     apple: "/icon.png",
   },
 };
