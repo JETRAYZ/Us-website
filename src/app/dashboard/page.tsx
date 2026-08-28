@@ -36,8 +36,6 @@ export default function DashboardPage() {
   const handleLogout = () => {
     localStorage.removeItem('activeUser');
     document.cookie = 'userId=; path=/; max-age=0';
-    localStorage.setItem('theme', 'classic');
-    document.documentElement.setAttribute('data-theme', 'classic');
     window.location.href = '/';
   };
 

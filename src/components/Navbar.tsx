@@ -115,9 +115,6 @@ export default function Navbar({ activeUser }: NavbarProps) {
   const handleLogout = () => {
     localStorage.removeItem('activeUser');
     document.cookie = 'userId=; path=/; max-age=0';
-    // Reset to default theme so the login screen shows classic dark
-    localStorage.setItem('theme', 'classic');
-    document.documentElement.setAttribute('data-theme', 'classic');
     router.push('/');
   };
 

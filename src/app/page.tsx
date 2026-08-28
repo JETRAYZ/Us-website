@@ -19,6 +19,12 @@ export default function ProfileLockScreen() {
   const router = useRouter();
 
   useEffect(() => {
+    // Apply the last chosen theme on the login screen
+    try {
+      const currentTheme = localStorage.getItem('theme') || 'classic';
+      document.documentElement.setAttribute('data-theme', currentTheme);
+    } catch (e) {}
+
     // Prefetch dashboard so clicking into it is 0ms
     router.prefetch('/dashboard');
 
