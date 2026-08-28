@@ -5,16 +5,23 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Delete } from 'lucide-react';
 import { Profile } from '@/types/database';
 
+interface LoginUser {
+  userId: string;
+  userName: string;
+  userRole: string;
+}
+
 interface PinModalProps {
   isOpen: boolean;
   onClose: () => void;
   profile: Profile | null;
-  onSuccess: (userData: any) => void;
+  onSuccess: (userData: LoginUser) => void;
 }
 
 export default function PinModal({ isOpen, onClose, profile, onSuccess }: PinModalProps) {
   const [pin, setPin] = useState<string[]>([]);
-  const [isError, setIsError] = useState(false);
+  const [isError, setIsError] = useState(false);   // shows error text
+  const [isShaking, setIsShaking] = useState(false); // red dots + shake animation
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -41,11 +48,15 @@ export default function PinModal({ isOpen, onClose, profile, onSuccess }: PinMod
         onSuccess(data.user);
       } else {
         setIsError(true);
+        setIsShaking(true);
         setPin([]);
+        setTimeout(() => setIsShaking(false), 600); // dots go white after shake
       }
     } catch (err) {
       setIsError(true);
+      setIsShaking(true);
       setPin([]);
+      setTimeout(() => setIsShaking(false), 600);
     } finally {
       setIsLoading(false);
     }
@@ -53,6 +64,7 @@ export default function PinModal({ isOpen, onClose, profile, onSuccess }: PinMod
 
   const handleNumberClick = (num: string) => {
     if (pin.length < 4) {
+      if (isError) setIsError(false); // clear error message as soon as user starts re-typing
       setPin([...pin, num]);
     }
   };
@@ -97,11 +109,15 @@ export default function PinModal({ isOpen, onClose, profile, onSuccess }: PinMod
             {[0, 1, 2, 3].map((i) => (
               <motion.div
                 key={i}
-                animate={isError ? { x: [0, -10, 10, -10, 10, 0] } : {}}
+                animate={isShaking ? { x: [0, -10, 10, -10, 10, 0] } : {}}
                 transition={{ duration: 0.4 }}
-                className={`w-4 h-4 rounded-full border-2 transition-colors duration-200 ${
-                  pin[i] ? 'bg-netflix-red border-netflix-red' : 'border-white/20'
-                } ${isError ? 'bg-red-500 border-red-500' : ''}`}
+                className={`w-4 h-4 rounded-full border-2 transition-colors duration-300 ${
+                  isShaking
+                    ? 'bg-red-500 border-red-500'
+                    : pin[i]
+                    ? 'bg-netflix-red border-netflix-red'
+                    : 'border-white/20 bg-transparent'
+                }`}
               />
             ))}
           </div>

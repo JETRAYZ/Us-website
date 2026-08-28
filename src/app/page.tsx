@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { createClient } from '@/lib/supabase/client';
@@ -9,51 +9,38 @@ import ProfileCard from '@/components/ProfileCard';
 import PinModal from '@/components/PinModal';
 import { Lock } from 'lucide-react';
 
+import { getCachedProfiles } from '@/lib/profiles-cache';
+
 export default function ProfileLockScreen() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
-  const supabase = createClient();
 
   useEffect(() => {
-    fetchProfiles();
-  }, []);
+    // Prefetch dashboard so clicking into it is 0ms
+    router.prefetch('/dashboard');
 
-  const fetchProfiles = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('role', { ascending: true });
-
-      if (error) throw error;
-      if (data) setProfiles(data);
-    } catch (err) {
-      console.error('Error fetching profiles:', err);
-    } finally {
+    getCachedProfiles().then((data) => {
+      setProfiles(data);
       setIsLoading(false);
-    }
-  };
+    });
+  }, [router]);
 
   const handleProfileClick = (profile: Profile) => {
     setSelectedProfile(profile);
     setIsModalOpen(true);
   };
 
-  const handleLoginSuccess = (userData: any) => {
+  const handleLoginSuccess = (userData: { userId: string; userName: string; userRole: string }) => {
     localStorage.setItem('activeUser', JSON.stringify(userData));
-    // Also set a cookie for server-side auth if needed
-    document.cookie = `userId=${userData.userId}; path=/; max-age=86400`;
+    document.cookie = `userId=${userData.userId}; path=/; max-age=86400; SameSite=Strict`;
 
-    if (userData.userRole === 'admin') {
-      localStorage.setItem('theme', 'sweet-pink');
-      document.documentElement.setAttribute('data-theme', 'sweet-pink');
-    } else {
-      localStorage.setItem('theme', 'classic');
-      document.documentElement.setAttribute('data-theme', 'classic');
-    }
+    // Restore the theme this user last chose — fallback to 'classic'
+    const savedTheme = localStorage.getItem(`theme_${userData.userId}`) ?? 'classic';
+    localStorage.setItem('theme', savedTheme);
+    document.documentElement.setAttribute('data-theme', savedTheme);
 
     router.push('/dashboard');
   };

@@ -2,7 +2,12 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  weight: ['400', '500', '700', '900'],
+  variable: '--font-inter',
+});
 
 export const metadata: Metadata = {
   title: "US Private Space",

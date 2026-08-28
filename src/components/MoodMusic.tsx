@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Music, Search, Play, Pause, ChevronRight, Loader2, Moon, Disc } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Profile } from '@/types/database';
+import { getCachedProfiles } from '@/lib/profiles-cache';
 import BottomSheet from './BottomSheet';
 
 interface MoodMusicProps {
@@ -21,7 +22,7 @@ export default function MoodMusic({ activeUser }: MoodMusicProps) {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     fetchProfiles();
@@ -37,7 +38,7 @@ export default function MoodMusic({ activeUser }: MoodMusicProps) {
   }, [supabase]);
 
   const fetchProfiles = async () => {
-    const { data } = await supabase.from('profiles').select('*').order('role', { ascending: true });
+    const data = await getCachedProfiles();
     if (data) setProfiles(data);
   };
 
@@ -49,7 +50,7 @@ export default function MoodMusic({ activeUser }: MoodMusicProps) {
     const delay = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(searchQuery)}&limit=4&entity=song`);
+        const res = await fetch(`/api/itunes?q=${encodeURIComponent(searchQuery)}&limit=4`);
         const data = await res.json();
         setSearchResults(data.results);
       } catch(e) {

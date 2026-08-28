@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, Plus, Calendar as CalendarIcon, Check } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Event } from '@/types/database';
+import { sendPushTrigger } from '@/lib/push-client';
 import BottomSheet from './BottomSheet';
 import ConfirmModal from './ConfirmModal';
 
@@ -55,6 +56,18 @@ export default function EventModal({
       .single();
     if (!error && data) {
       onEventAdded(data);
+      
+      // Trigger Web Push to partner
+      const partner = profiles.find((p: any) => p.id !== userId);
+      const me = profiles.find((p: any) => p.id === userId);
+      if (partner) {
+        sendPushTrigger({
+          targetUserId: partner.id,
+          title: `มีนัดหมายใหม่จาก ${me?.name || 'Partner'} 📅`,
+          body: `${title} (${date.toLocaleDateString('th-TH', { month: 'short', day: 'numeric' })})`,
+        });
+      }
+
       setTitle('');
       window.dispatchEvent(new CustomEvent('calendar_updated'));
     }

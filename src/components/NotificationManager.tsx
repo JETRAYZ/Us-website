@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { registerServiceWorker, subscribeToPush } from '@/lib/push-client';
+import { getCachedProfiles } from '@/lib/profiles-cache';
 
 export default function NotificationManager({ userId }: { userId: string }) {
   const [partnerName, setPartnerName] = useState('Partner');
@@ -13,8 +15,16 @@ export default function NotificationManager({ userId }: { userId: string }) {
   }, [partnerName]);
 
   useEffect(() => {
+    // 1. Register Service Worker on mount
+    registerServiceWorker();
+
+    // 2. If permission is already granted, ensure push subscription is active on server
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      subscribeToPush(userId).catch(console.error);
+    }
+
     const fetchPartnerName = async () => {
-      const { data } = await supabase.from('profiles').select('id, name');
+      const data = await getCachedProfiles();
       if (data) {
         const partner = data.find(p => p.id !== userId);
         if (partner) setPartnerName(partner.name);
@@ -22,20 +32,21 @@ export default function NotificationManager({ userId }: { userId: string }) {
     };
     fetchPartnerName();
 
+    // Fallback foreground toast/audio if tab is open
     const postItChannel = supabase
       .channel(`post-its-${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'post_its' }, (payload) => {
         if (payload.new.author_id !== userId) {
-          sendNativeNotification(
-            `New Message From ${partnerNameRef.current} 💌`, 
+          showForegroundNotification(
+            `New Message From ${partnerNameRef.current} 💌`,
             payload.new.message
           );
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'post_its' }, (payload) => {
         if (payload.new.author_id === userId && payload.new.is_read === true) {
-          sendNativeNotification(
-            `${partnerNameRef.current} seen your message ✨`, 
+          showForegroundNotification(
+            `${partnerNameRef.current} read your note ✨`,
             `ข้อความของคุณถูกเปิดอ่านแล้วจ้า`
           );
         }
@@ -46,8 +57,8 @@ export default function NotificationManager({ userId }: { userId: string }) {
       .channel(`calendar-${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'events' }, (payload) => {
         if (payload.new.created_by !== userId) {
-          sendNativeNotification(
-            `New Event From ${partnerNameRef.current} 📅`, 
+          showForegroundNotification(
+            `New Event From ${partnerNameRef.current} 📅`,
             payload.new.title
           );
         }
@@ -60,15 +71,25 @@ export default function NotificationManager({ userId }: { userId: string }) {
     };
   }, [userId, supabase]);
 
-  const sendNativeNotification = (title: string, body: string) => {
+  const showForegroundNotification = (title: string, body: string) => {
     const isMuted = localStorage.getItem('notifs_muted') === 'true';
     if (isMuted) return;
 
-    if (typeof window !== 'undefined' && Notification.permission === 'granted') {
-      new Notification(title, {
-        body,
-        icon: 'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Telegram-Animated-Emojis/main/Symbols/Heart.png',
-      });
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        navigator.serviceWorker.ready.then((reg) => {
+          reg.showNotification(title, {
+            body,
+            icon: '/icon.png',
+            badge: '/icon.png',
+            data: { url: '/dashboard' },
+          });
+        }).catch(() => {
+          new Notification(title, { body, icon: '/icon.png' });
+        });
+      } catch (e) {
+        // Ignore fallback errors
+      }
     }
   };
 

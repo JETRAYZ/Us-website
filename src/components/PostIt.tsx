@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, Send, StickyNote, CheckCircle2, History } from 'lucide-react';
+import { Heart, Send, StickyNote, CheckCircle2, History, Camera, X, Image as ImageIcon } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { PostIt as PostItType } from '@/types/database';
+import { sendPushTrigger } from '@/lib/push-client';
+import { getCachedProfiles } from '@/lib/profiles-cache';
 import Toast from './Toast';
 import BottomSheet from './BottomSheet';
 
@@ -14,8 +16,11 @@ interface PostItProps {
 
 export default function PostIt({ userId }: PostItProps) {
   const [unreadNote, setUnreadNote] = useState<PostItType | null>(null);
+  const [partnerId, setPartnerId] = useState<string | null>(null);
   const [partnerName, setPartnerName] = useState('Partner');
+  const [myName, setMyName] = useState('Partner');
   const [message, setMessage] = useState('');
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [replyMessage, setReplyMessage] = useState('');
   const [toastMsg, setToastMsg] = useState('Note sent!');
@@ -24,9 +29,11 @@ export default function PostIt({ userId }: PostItProps) {
   const [historyNotes, setHistoryNotes] = useState<any[]>([]);
   const [supabase] = useState(() => createClient());
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     fetchUnreadNote();
-    fetchPartnerInfo();
+    fetchProfilesInfo();
 
     const channel = supabase
       .channel('post-its-realtime')
@@ -57,7 +64,7 @@ export default function PostIt({ userId }: PostItProps) {
       .from('post_its')
       .select('*, profiles(name)')
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(30);
     if (data) {
       setHistoryNotes(data);
     }
@@ -81,13 +88,64 @@ export default function PostIt({ userId }: PostItProps) {
     }
   };
 
-  const fetchPartnerInfo = async () => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('name')
-      .neq('id', userId)
-      .single();
-    if (data) setPartnerName(data.name);
+  const fetchProfilesInfo = async () => {
+    const data = await getCachedProfiles();
+    if (data) {
+      const partner = data.find(p => p.id !== userId);
+      const me = data.find(p => p.id === userId);
+      if (partner) {
+        setPartnerId(partner.id);
+        setPartnerName(partner.name);
+      }
+      if (me) setMyName(me.name);
+    }
+  };
+
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const max = 800;
+          if (width > height) {
+            if (width > max) {
+              height *= max / width;
+              width = max;
+            }
+          } else {
+            if (height > max) {
+              width *= max / height;
+              height = max;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return reject('No canvas context');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.8));
+        };
+        img.onerror = () => reject('Image load error');
+        if (e.target?.result) img.src = e.target.result as string;
+      };
+      reader.onerror = () => reject('File read error');
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await compressImage(file);
+      setImagePreview(base64);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const handleAcknowledgeAndReply = async () => {
@@ -100,10 +158,28 @@ export default function PostIt({ userId }: PostItProps) {
       .eq('id', unreadNote.id);
     
     if (!ackError) {
+      // Trigger Web Push to note author that note was read
+      if (unreadNote.author_id) {
+        sendPushTrigger({
+          targetUserId: unreadNote.author_id,
+          title: `${myName} อ่านโน้ตแล้วนะ ✨`,
+          body: 'โน้ตที่คุณเขียนถูกเปิดอ่านเรียบร้อยจ้า 💌',
+        });
+      }
+
       if (replyMessage.trim()) {
         await supabase
           .from('post_its')
           .insert([{ author_id: userId, message: replyMessage.substring(0, 200), is_read: false }]);
+        
+        if (partnerId) {
+          sendPushTrigger({
+            targetUserId: partnerId,
+            title: `มีข้อความตอบกลับจาก ${myName} 💌`,
+            body: replyMessage.substring(0, 80),
+          });
+        }
+
         setToastMsg('Reply sent!');
         setShowToast(true);
       }
@@ -114,15 +190,31 @@ export default function PostIt({ userId }: PostItProps) {
   };
 
   const handleSendNote = async () => {
-    if (!message.trim()) return;
+    if (!message.trim() && !imagePreview) return;
     setIsSending(true);
     
     const { error } = await supabase
       .from('post_its')
-      .insert([{ author_id: userId, message: message.substring(0, 200), is_read: false }]);
+      .insert([{
+        author_id: userId,
+        message: message.substring(0, 200) || '(ส่งรูปภาพ 📸)',
+        image_url: imagePreview,
+        is_read: false,
+      }]);
 
     if (!error) {
+      // Trigger real Web Push notification to partner
+      if (partnerId) {
+        sendPushTrigger({
+          targetUserId: partnerId,
+          title: `มีโน้ตใหม่จาก ${myName} 💌`,
+          body: message.trim() ? message.substring(0, 80) : 'แนบรูปภาพมาให้ดูจ้า 📸',
+        });
+      }
+
       setMessage('');
+      setImagePreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       setToastMsg('Note sent!');
       setShowToast(true);
     }
@@ -130,7 +222,7 @@ export default function PostIt({ userId }: PostItProps) {
   };
 
   return (
-    <section className="px-4 mt-6 pb-12">
+    <section className="px-4 mt-6 pb-6">
       {/* Compose UI (Always visible) */}
       <div className="bg-netflix-card rounded-2xl p-5 border border-white/5 shadow-xl relative z-10">
         <div className="flex justify-between items-center mb-4">
@@ -142,6 +234,7 @@ export default function PostIt({ userId }: PostItProps) {
           <button 
             onClick={() => setIsHistoryOpen(true)}
             className="text-secondary-text hover:text-foreground transition-colors p-2 active:scale-95"
+            title="Note History"
           >
             <History size={20} />
           </button>
@@ -153,24 +246,60 @@ export default function PostIt({ userId }: PostItProps) {
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Write something sweet..."
             maxLength={200}
-            className="w-full h-28 bg-foreground/5 border border-foreground/10 rounded-xl p-4 text-foreground text-sm outline-none focus:border-netflix-red resize-none hide-scrollbar"
+            className="w-full h-24 bg-foreground/5 border border-foreground/10 rounded-xl p-4 text-foreground text-sm outline-none focus:border-netflix-red resize-none hide-scrollbar"
           />
           <div className="absolute bottom-3 right-3 text-[10px] text-secondary-text">
             {message.length}/200
           </div>
         </div>
-        
-        <button
-          onClick={handleSendNote}
-          disabled={isSending || !message.trim()}
-          className="w-full mt-4 py-3 bg-netflix-red text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
-        >
-          {isSending ? (
-            <Loader2 size={18} className="animate-spin" />
-          ) : (
-            <><Send size={16} /> Send Note</>
-          )}
-        </button>
+
+        {/* Image Preview if attached */}
+        {imagePreview && (
+          <div className="relative mt-3 w-24 h-24 rounded-xl overflow-hidden border border-white/20 group">
+            <img src={imagePreview} alt="Attached" className="w-full h-full object-cover" />
+            <button
+              onClick={() => {
+                setImagePreview(null);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+              }}
+              className="absolute top-1 right-1 p-1 bg-black/70 rounded-full text-white hover:bg-black"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 mt-4">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className={`p-3 rounded-xl border flex items-center justify-center transition-all ${
+              imagePreview ? 'bg-netflix-red/20 border-netflix-red text-netflix-red' : 'bg-foreground/5 border-foreground/10 text-secondary-text hover:text-foreground'
+            }`}
+            title="Attach photo"
+          >
+            <Camera size={18} />
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            accept="image/*"
+            className="hidden"
+          />
+
+          <button
+            onClick={handleSendNote}
+            disabled={isSending || (!message.trim() && !imagePreview)}
+            className="flex-1 py-3 bg-netflix-red text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 shadow-lg shadow-netflix-red/20"
+          >
+            {isSending ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <><Send size={16} /> Send Note</>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Received Note Modal Overlay */}
@@ -196,7 +325,13 @@ export default function PostIt({ userId }: PostItProps) {
                 {partnerName} left you a note:
               </p>
               
-              <p className="text-[#1a1a1a] text-xl font-medium leading-relaxed mb-6">
+              {unreadNote.image_url && (
+                <div className="w-full max-h-48 rounded-lg overflow-hidden mb-3 shadow-md border border-[#713f12]/20">
+                  <img src={unreadNote.image_url} alt="Note Attachment" className="w-full h-full object-cover" />
+                </div>
+              )}
+
+              <p className="text-[#1a1a1a] text-lg font-medium leading-relaxed mb-4">
                 &ldquo;{unreadNote.message}&rdquo;
               </p>
               
@@ -221,7 +356,7 @@ export default function PostIt({ userId }: PostItProps) {
                   className="flex items-center gap-2 bg-netflix-red text-white px-5 py-2.5 rounded-full text-xs font-bold shadow-lg active:scale-95 transition-all disabled:opacity-50"
                 >
                   {isSending ? (
-                    <Loader2 size={14} className="animate-spin" />
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   ) : replyMessage.trim() ? (
                     <><Send size={14} /> Send Reply</>
                   ) : (
@@ -264,6 +399,13 @@ export default function PostIt({ userId }: PostItProps) {
                       {new Date(note.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
+                  
+                  {note.image_url && (
+                    <div className="w-full max-h-40 rounded-xl overflow-hidden mb-2 shadow-md">
+                      <img src={note.image_url} alt="Note Photo" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+
                   <p className="text-foreground text-sm leading-relaxed">&ldquo;{note.message}&rdquo;</p>
                   <div className="mt-2 flex justify-end">
                     <span className={`text-[10px] ${note.is_read ? 'text-green-500 font-bold' : 'text-foreground/30'}`}>
@@ -279,7 +421,3 @@ export default function PostIt({ userId }: PostItProps) {
     </section>
   );
 }
-
-const Loader2 = ({ size, className }: { size: number; className?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>
-);

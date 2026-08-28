@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-interface ActiveUser {
+export interface ActiveUser {
   userId: string;
   userName: string;
   userRole: 'admin' | 'partner';
@@ -11,18 +11,27 @@ interface ActiveUser {
 
 export function useActiveUser() {
   const [user, setUser] = useState<ActiveUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
+    setIsMounted(true);
     const storedUser = localStorage.getItem('activeUser');
     if (!storedUser) {
-      router.push('/');
+      setUser(null);
+      router.replace('/');
     } else {
-      setUser(JSON.parse(storedUser));
+      try {
+        const parsed = JSON.parse(storedUser);
+        setUser(parsed);
+      } catch {
+        router.replace('/');
+      }
     }
-    setLoading(false);
   }, [router]);
 
-  return { user, loading };
+  return { 
+    user, 
+    loading: !isMounted || !user 
+  };
 }

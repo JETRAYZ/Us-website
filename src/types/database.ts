@@ -4,7 +4,7 @@ export interface Profile {
   id: string;
   role: Role;
   name: string;
-  pin_hash: string;
+  pin_hash?: string; // never sent to client — only used server-side in verify-pin
   avatar_url: string | null;
   mood_percent: number;
   music_url: string | null;
@@ -23,6 +23,7 @@ export interface PostIt {
   id: string;
   author_id: string;
   message: string;
+  image_url?: string | null;
   is_read: boolean;
   created_at: string;
 }
@@ -50,6 +51,9 @@ export interface WatchlistItem {
   title: string;
   cover_url: string | null;
   status: 'waiting' | 'watching' | 'done';
+  category?: 'movie' | 'series' | 'anime' | 'food' | 'place';
+  rating?: number;
+  review?: string | null;
   added_by: string;
   created_at: string;
 }

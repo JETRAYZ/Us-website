@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import BottomSheet from './BottomSheet';
-import { Check, Clapperboard, Popcorn, Eye, Search, Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { Check, Clapperboard, Popcorn, Eye, Search, Loader2, Film, Tv, Sparkles, Utensils, MapPin } from 'lucide-react';
+import { sendPushTrigger } from '@/lib/push-client';
 
 interface AddWatchlistModalProps {
   isOpen: boolean;
@@ -13,10 +13,13 @@ interface AddWatchlistModalProps {
   onAdded: () => void;
 }
 
+export type WatchlistCategory = 'movie' | 'series' | 'anime' | 'food' | 'place';
+
 export default function AddWatchlistModal({ isOpen, onClose, userId, onAdded }: AddWatchlistModalProps) {
   const [title, setTitle] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
   const [status, setStatus] = useState<'waiting' | 'watching' | 'done'>('waiting');
+  const [category, setCategory] = useState<WatchlistCategory>('movie');
   const [isAdding, setIsAdding] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -51,6 +54,7 @@ export default function AddWatchlistModal({ isOpen, onClose, userId, onAdded }: 
   const selectShow = (show: any) => {
     setTitle(show.name);
     setCoverUrl(show.image?.original || show.image?.medium || '');
+    setCategory(show.type === 'Animation' ? 'anime' : 'series');
     setSearchResults([]);
     setSearchQuery('');
   };
@@ -61,32 +65,91 @@ export default function AddWatchlistModal({ isOpen, onClose, userId, onAdded }: 
 
     const { error } = await supabase
       .from('watchlist_items')
-      .insert([{ title, cover_url: coverUrl || null, status, added_by: userId }]);
+      .insert([{
+        title,
+        cover_url: coverUrl || null,
+        status,
+        category,
+        added_by: userId,
+      }]);
 
     if (!error) {
+      // Trigger Web Push to partner
+      supabase.from('profiles').select('id, name').then(({ data: profiles }) => {
+        if (profiles) {
+          const partner = profiles.find(p => p.id !== userId);
+          const me = profiles.find(p => p.id === userId);
+          if (partner) {
+            sendPushTrigger({
+              targetUserId: partner.id,
+              title: `เพิ่มรายการใหม่ใน Watchlist 🎬`,
+              body: `${me?.name || 'Partner'} เพิ่ม "${title}" ลงในรายการรอดูด้วยกัน`,
+            });
+          }
+        }
+      });
+
       setTitle('');
       setCoverUrl('');
       setStatus('waiting');
+      setCategory('movie');
       onAdded();
       onClose();
     }
     setIsAdding(false);
   };
 
+  const categories: { id: WatchlistCategory; label: string; icon: any }[] = [
+    { id: 'movie', label: 'Movie', icon: Film },
+    { id: 'series', label: 'Series', icon: Tv },
+    { id: 'anime', label: 'Anime', icon: Sparkles },
+    { id: 'food', label: 'Food', icon: Utensils },
+    { id: 'place', label: 'Place', icon: MapPin },
+  ];
+
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose} title={<span className="flex items-center gap-2">Add to Watchlist <Clapperboard size={20} /></span>}>
-      <div className="space-y-6">
+      <div className="space-y-5 pb-6">
+        {/* Category Picker */}
         <div className="space-y-2">
-          <label className="text-xs font-bold text-secondary-text uppercase tracking-widest flex items-center gap-2">
-            Search <Search size={12} />
+          <label className="text-[10px] font-bold text-secondary-text uppercase tracking-widest">
+            Category
+          </label>
+          <div className="grid grid-cols-5 gap-1.5">
+            {categories.map((cat) => {
+              const Icon = cat.icon;
+              const isSelected = category === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setCategory(cat.id)}
+                  className={`py-2.5 px-1 rounded-xl flex flex-col items-center gap-1 transition-all border ${
+                    isSelected
+                      ? 'bg-netflix-red text-white border-netflix-red shadow-lg shadow-netflix-red/30 scale-105'
+                      : 'bg-black/30 border-white/5 text-secondary-text hover:text-white'
+                  }`}
+                >
+                  <Icon size={14} />
+                  <span className="text-[10px] font-bold">{cat.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="space-y-2">
+          <label className="text-[10px] font-bold text-secondary-text uppercase tracking-widest flex items-center gap-2">
+            Auto-Search Cover <Search size={12} />
           </label>
           <div className="relative">
             <input
               type="text"
-              placeholder="Search movies or series..."
+              placeholder="Search movie/series for auto poster..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-netflix-red/10 border border-netflix-red/20 rounded-xl px-4 py-3 text-foreground outline-none focus:border-netflix-red"
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-foreground outline-none focus:border-netflix-red text-sm"
             />
             {isSearching && (
               <div className="absolute right-4 top-1/2 -translate-y-1/2">
@@ -122,69 +185,62 @@ export default function AddWatchlistModal({ isOpen, onClose, userId, onAdded }: 
           </div>
         </div>
 
+        {/* Title */}
         <div className="space-y-2">
-          <label className="text-xs font-bold text-secondary-text uppercase tracking-widest">Title</label>
+          <label className="text-[10px] font-bold text-secondary-text uppercase tracking-widest">
+            Title / Name
+          </label>
           <input
             type="text"
-            placeholder="Movie / Anime title..."
+            placeholder="e.g. Stranger Things, ข้าวต้มปลา..."
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-foreground outline-none focus:border-netflix-red"
+            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-foreground outline-none focus:border-netflix-red text-sm font-bold"
           />
         </div>
 
+        {/* Status */}
         <div className="space-y-2">
-          <label className="text-xs font-bold text-secondary-text uppercase tracking-widest">Cover Image URL</label>
-          <div className="flex gap-4">
-            <input
-              type="text"
-              placeholder="Paste image URL (optional)"
-              value={coverUrl}
-              onChange={(e) => setCoverUrl(e.target.value)}
-              className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-foreground outline-none focus:border-netflix-red text-sm"
-            />
-            {coverUrl && (
-              <div className="w-[60px] h-[90px] rounded-lg overflow-hidden bg-black/40 border border-white/10 flex-shrink-0">
-                <img 
-                  src={coverUrl} 
-                  onError={(e) => (e.currentTarget.style.display = 'none')}
-                  className="w-full h-full object-cover" 
-                />
-              </div>
-            )}
-          </div>
-          <p className="text-[10px] text-secondary-text italic mt-1">
-            Tip: Search posters on themoviedb.org
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-secondary-text uppercase tracking-widest">Initial Status</label>
-          <div className="flex gap-2">
+          <label className="text-[10px] font-bold text-secondary-text uppercase tracking-widest">
+            Status
+          </label>
+          <div className="grid grid-cols-3 gap-2">
             {[
-              { id: 'waiting', label: <div className="flex items-center gap-1 justify-center">Waiting <Popcorn size={14} /></div> },
-              { id: 'watching', label: <div className="flex items-center gap-1 justify-center">Watching <Eye size={14} /></div> },
-              { id: 'done', label: <div className="flex items-center gap-1 justify-center">Done <Check size={14} strokeWidth={3}/></div> }
-            ].map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setStatus(s.id as any)}
-                className={`flex-1 py-2 rounded-full text-xs font-bold transition-all border ${
-                  status === s.id ? 'bg-netflix-red border-netflix-red text-white' : 'bg-transparent border-white/10 text-secondary-text'
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
+              { id: 'waiting', label: 'Want to watch', icon: Popcorn },
+              { id: 'watching', label: 'Watching', icon: Eye },
+              { id: 'done', label: 'Watched', icon: Check },
+            ].map((s) => {
+              const Icon = s.icon;
+              const isSelected = status === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setStatus(s.id as any)}
+                  className={`py-2.5 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-all border text-xs font-bold ${
+                    isSelected
+                      ? 'bg-white text-black border-white shadow-md'
+                      : 'bg-black/30 border-white/5 text-secondary-text hover:text-white'
+                  }`}
+                >
+                  <Icon size={14} />
+                  <span>{s.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         <button
           onClick={handleAdd}
           disabled={isAdding || !title.trim()}
-          className="w-full py-4 bg-netflix-red text-white font-bold rounded-xl active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 mt-4"
+          className="w-full py-4 bg-netflix-red text-white font-bold rounded-2xl active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-xl shadow-netflix-red/20 mt-2"
         >
-          {isAdding ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Clapperboard size={18} /> Add to Watchlist</>}
+          {isAdding ? (
+            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          ) : (
+            'Add to List'
+          )}
         </button>
       </div>
     </BottomSheet>

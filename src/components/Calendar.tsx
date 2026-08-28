@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, CalendarDays, Heart } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Event } from '@/types/database';
+import { getCachedProfiles } from '@/lib/profiles-cache';
 import EventModal from './EventModal';
 
 interface CalendarProps {
@@ -36,7 +37,7 @@ export default function Calendar({ userId }: CalendarProps) {
   }, [currentDate, supabase]);
 
   const fetchProfiles = async () => {
-    const { data } = await supabase.from('profiles').select('id, role').order('role', { ascending: true });
+    const data = await getCachedProfiles();
     if (data) setProfiles(data);
   };
 
@@ -186,7 +187,7 @@ export default function Calendar({ userId }: CalendarProps) {
   };
 
   return (
-    <section className="w-full">
+    <section id="calendar-section" className="w-full scroll-mt-20">
       <h2 className="text-foreground font-bold px-4 pt-6 pb-3 text-lg flex items-center gap-2">Our Calendar <CalendarDays size={20} /></h2>
       
       <div className="mx-4 bg-netflix-card rounded-2xl p-4 shadow-xl border border-white/5">

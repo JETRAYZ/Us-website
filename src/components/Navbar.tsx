@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Camera, LogOut, Loader2, Save, Palette, Check, Bell, BellOff } from 'lucide-react';
+import { Camera, LogOut, Loader2, Save, Palette, Check, Bell, BellOff, Send, Sparkles } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Profile } from '@/types/database';
+import { subscribeToPush, sendPushTrigger } from '@/lib/push-client';
+import { getCachedProfiles, updateCachedProfile } from '@/lib/profiles-cache';
 import BottomSheet from './BottomSheet';
 
 interface NavbarProps {
@@ -31,25 +33,19 @@ export default function Navbar({ activeUser }: NavbarProps) {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const fetchProfiles = useCallback(async () => {
-    const { data } = await supabase.from('profiles').select('*').order('role', { ascending: true });
+    const data = await getCachedProfiles();
     if (data) {
       setProfiles(data);
       const me = data.find(p => p.id === activeUser.userId);
       if (me) {
         setMyMood(me.mood_percent);
         setEditName(me.name);
-        
-        // Auto-set theme based on role if no theme is saved
-        if (!localStorage.getItem('theme')) {
-          const defaultTheme = me.role === 'admin' ? 'classic' : 'sweet-pink';
-          handleSelectTheme(defaultTheme);
-        }
       }
     }
-  }, [activeUser.userId, supabase]);
+  }, [activeUser.userId]);
 
   useEffect(() => {
     fetchProfiles();
@@ -83,6 +79,8 @@ export default function Navbar({ activeUser }: NavbarProps) {
     };
   }, [fetchProfiles, supabase]);
 
+
+
   const toggleNotifications = async () => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
 
@@ -90,20 +88,36 @@ export default function Navbar({ activeUser }: NavbarProps) {
       const res = await Notification.requestPermission();
       setNotifPermission(res);
       if (res === 'granted') {
-        new Notification('สำเร็จแล้ว! 🎉', { body: 'เปิดแจ้งเตือนเรียบร้อยจ้า' });
+        const subResult = await subscribeToPush(activeUser.userId);
+        if (subResult.success) {
+          sendPushTrigger({
+            targetUserId: activeUser.userId,
+            title: 'เปิดแจ้งเตือนสำเร็จ! 🎉',
+            body: 'ตั้งแต่นี้ไปคุณจะไม่พลาดทุกข้อความจากหวานใจแล้วจ้า 💌',
+          });
+        }
       }
     } else if (Notification.permission === 'granted') {
       const newState = !notifsMuted;
       setNotifsMuted(newState);
       localStorage.setItem('notifs_muted', String(newState));
+      if (!newState) {
+        // Ensure subscription is active
+        subscribeToPush(activeUser.userId).catch(console.error);
+      }
     } else {
       alert('คุณได้ปิดการแจ้งเตือนในระดับเบราว์เซอร์ไว้ กรุณาเปิดในการตั้งค่าเบราว์เซอร์ก่อนครับ');
     }
   };
 
+
+
   const handleLogout = () => {
     localStorage.removeItem('activeUser');
     document.cookie = 'userId=; path=/; max-age=0';
+    // Reset to default theme so the login screen shows classic dark
+    localStorage.setItem('theme', 'classic');
+    document.documentElement.setAttribute('data-theme', 'classic');
     router.push('/');
   };
 
@@ -184,6 +198,7 @@ export default function Navbar({ activeUser }: NavbarProps) {
 
     if (!error) {
       setProfiles(prev => prev.map(p => p.id === activeUser.userId ? { ...p, ...updates } : p));
+      updateCachedProfile({ id: activeUser.userId, ...updates });
       try {
         const storedUserStr = localStorage.getItem('activeUser');
         if (storedUserStr) {
@@ -205,6 +220,8 @@ export default function Navbar({ activeUser }: NavbarProps) {
     setCurrentTheme(themeId);
     try {
       localStorage.setItem('theme', themeId);
+      // Save per-user so next login restores this choice
+      localStorage.setItem(`theme_${activeUser.userId}`, themeId);
       document.documentElement.setAttribute('data-theme', themeId);
     } catch (e) {}
   };
@@ -359,10 +376,10 @@ export default function Navbar({ activeUser }: NavbarProps) {
           >
             {isSavingProfile ? <Loader2 className="animate-spin" size={20} /> : <><Save size={20} /> Save Changes</>}
           </button>
-          <div className="w-full border-t border-white/5 mt-4 pt-6">
+          <div className="w-full border-t border-white/5 mt-4 pt-4">
             <button
               onClick={handleLogout}
-              className="w-full py-4 bg-white/5 hover:bg-red-500/10 text-red-500 font-bold rounded-xl active:scale-95 transition-all flex items-center justify-center gap-2"
+              className="w-full py-3.5 bg-white/5 hover:bg-red-500/10 text-red-500 font-bold rounded-xl active:scale-95 transition-all flex items-center justify-center gap-2"
             >
               <LogOut size={18} /> Logout
             </button>

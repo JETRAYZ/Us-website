@@ -1,18 +1,21 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, Trash2, Loader2, Send, X, History, Calendar as CalendarIcon, RotateCcw } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Snap } from '@/types/database';
+import { sendPushTrigger } from '@/lib/push-client';
 import ConfirmModal from './ConfirmModal';
 
 interface LocketSnapProps {
   userId: string;
 }
 
+let memoryCachedSnaps: Snap[] = [];
+
 export default function LocketSnap({ userId }: LocketSnapProps) {
-  const [snaps, setSnaps] = useState<Snap[]>([]);
+  const [snaps, setSnaps] = useState<Snap[]>(() => memoryCachedSnaps);
   const [isUploading, setIsUploading] = useState(false);
   const [captioningId, setCaptioningId] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
@@ -29,14 +32,33 @@ export default function LocketSnap({ userId }: LocketSnapProps) {
   const [initialSnapId, setInitialSnapId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+
+  const fetchSnaps = useCallback(async () => {
+    let query = supabase
+      .from('snaps')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    
+    if (selectedDate) {
+      const startOfDay = `${selectedDate}T00:00:00.000Z`;
+      const endOfDay = `${selectedDate}T23:59:59.999Z`;
+      query = query.gte('created_at', startOfDay).lte('created_at', endOfDay);
+    }
+
+    const { data } = await query;
+    if (data) {
+      setSnaps(data);
+      if (!selectedDate) memoryCachedSnaps = data;
+    }
+  }, [supabase, selectedDate]);
 
   useEffect(() => {
     fetchSnaps();
     const channel = supabase
       .channel('snaps-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'snaps' }, (payload) => {
-        // Realtime only updates if we are not in filtered mode, or we just re-fetch
         if (!selectedDate) {
           if (payload.eventType === 'INSERT') {
             setSnaps(prev => [payload.new as Snap, ...prev]);
@@ -46,30 +68,14 @@ export default function LocketSnap({ userId }: LocketSnapProps) {
             setSnaps(prev => prev.map(s => s.id === payload.new.id ? { ...s, ...payload.new } : s));
           }
         } else {
-           fetchSnaps(); // Refresh to ensure filtered view is correct
+          fetchSnaps();
         }
       })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase, selectedDate]);
-
-  const fetchSnaps = async () => {
-    let query = supabase
-      .from('snaps')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (selectedDate) {
-      const startOfDay = `${selectedDate}T00:00:00.000Z`;
-      const endOfDay = `${selectedDate}T23:59:59.999Z`;
-      query = query.gte('created_at', startOfDay).lte('created_at', endOfDay);
-    }
-
-    const { data } = await query;
-    if (data) setSnaps(data);
-  };
+  }, [supabase, selectedDate, fetchSnaps]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -97,6 +103,22 @@ export default function LocketSnap({ userId }: LocketSnapProps) {
         .single();
       if (dbError) throw dbError;
       if (!selectedDate) setSnaps(prev => [insertedSnap, ...prev]);
+
+      // Trigger Web Push to partner
+      supabase.from('profiles').select('id, name').then(({ data: profiles }) => {
+        if (profiles) {
+          const partner = profiles.find(p => p.id !== userId);
+          const me = profiles.find(p => p.id === userId);
+          if (partner) {
+            sendPushTrigger({
+              targetUserId: partner.id,
+              title: `มีรูปใหม่จาก ${me?.name || 'Partner'} 📸`,
+              body: previewCaption ? `"${previewCaption}"` : 'เปิดดูรูปใหม่ใน Our Snaps กันเถอะ ✨',
+            });
+          }
+        }
+      });
+
       setPreviewFile(null);
       setPreviewUrl(null);
       setPreviewCaption('');

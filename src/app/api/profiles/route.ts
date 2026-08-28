@@ -6,7 +6,7 @@ export async function GET() {
     const supabase = createServiceRoleClient();
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, name, role, avatar_url, mood_percent, music_url, updated_at')
       .order('role', { ascending: true });
 
     if (error) {

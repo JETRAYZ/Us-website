@@ -1,13 +1,33 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
+import { rateLimit } from '@/lib/rate-limit';
 
 export async function POST(req: Request) {
+  // --- Rate Limiting: 5 attempts per IP+profile per minute ---
+  const forwarded = req.headers.get('x-forwarded-for');
+  const ip = forwarded ? forwarded.split(',')[0].trim() : (req.headers.get('x-real-ip') ?? 'unknown');
+
   try {
-    const { profileId, pin } = await req.json();
+    const body = await req.json();
+    const { profileId, pin } = body as { profileId?: string; pin?: string };
 
     if (!profileId || !pin) {
       return NextResponse.json({ error: 'Missing profileId or pin' }, { status: 400 });
+    }
+
+    // Key combines IP + profileId so one IP can't spam multiple profiles freely
+    const rateLimitKey = `${ip}:${profileId}`;
+    const { allowed, retryAfterSec } = rateLimit(rateLimitKey, 5, 60_000);
+
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: `Too many attempts. Try again in ${retryAfterSec}s.` },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(retryAfterSec) },
+        }
+      );
     }
 
     const supabase = createServiceRoleClient();
@@ -28,7 +48,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Incorrect PIN' });
     }
 
-    // Success
     return NextResponse.json({
       success: true,
       user: {
@@ -37,7 +56,7 @@ export async function POST(req: Request) {
         userRole: profile.role,
       },
     });
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
