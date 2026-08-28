@@ -88,22 +88,26 @@ export default function Navbar({ activeUser }: NavbarProps) {
       const res = await Notification.requestPermission();
       setNotifPermission(res);
       if (res === 'granted') {
-        const subResult = await subscribeToPush(activeUser.userId);
-        if (subResult.success) {
-          sendPushTrigger({
-            targetUserId: activeUser.userId,
-            title: 'เปิดแจ้งเตือนสำเร็จ! 🎉',
-            body: 'ตั้งแต่นี้ไปคุณจะไม่พลาดทุกข้อความจากหวานใจแล้วจ้า 💌',
-          });
-        }
+        setNotifsMuted(false);
+        localStorage.setItem('notifs_muted', 'false');
+        new Notification('เปิดแจ้งเตือนสำเร็จแล้ว! 🎉', {
+          body: 'คุณจะไม่พลาดทุกข้อความจากหวานใจแล้วจ้า 💌',
+          icon: '/icon.png',
+        });
+        subscribeToPush(activeUser.userId).catch(console.error);
       }
     } else if (Notification.permission === 'granted') {
       const newState = !notifsMuted;
       setNotifsMuted(newState);
       localStorage.setItem('notifs_muted', String(newState));
       if (!newState) {
-        // Ensure subscription is active
+        new Notification('เปิดรับการแจ้งเตือนแล้ว 🔔', {
+          body: 'พร้อมรับข้อความใหม่เสมอจ้า ✨',
+          icon: '/icon.png',
+        });
         subscribeToPush(activeUser.userId).catch(console.error);
+      } else {
+        alert('ปิดการแจ้งเตือนชั่วคราวแล้ว 🔕 (กดอีกครั้งเพื่อเปิดใหม่)');
       }
     } else {
       alert('คุณได้ปิดการแจ้งเตือนในระดับเบราว์เซอร์ไว้ กรุณาเปิดในการตั้งค่าเบราว์เซอร์ก่อนครับ');

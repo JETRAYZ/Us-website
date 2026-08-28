@@ -8,7 +8,7 @@ import { getCachedProfiles } from '@/lib/profiles-cache';
 export default function NotificationManager({ userId }: { userId: string }) {
   const [partnerName, setPartnerName] = useState('Partner');
   const partnerNameRef = useRef('Partner');
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   useEffect(() => {
     partnerNameRef.current = partnerName;
@@ -32,34 +32,34 @@ export default function NotificationManager({ userId }: { userId: string }) {
     };
     fetchPartnerName();
 
-    // Fallback foreground toast/audio if tab is open
+    // Direct Realtime listener for foreground notifications
     const postItChannel = supabase
-      .channel(`post-its-${userId}`)
+      .channel(`post-its-notify-${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'post_its' }, (payload) => {
-        if (payload.new.author_id !== userId) {
-          showForegroundNotification(
+        if (payload.new && payload.new.author_id !== userId) {
+          sendNativeNotification(
             `New Message From ${partnerNameRef.current} 💌`,
-            payload.new.message
+            payload.new.message || 'แนบรูปภาพมาให้ดูจ้า 📸'
           );
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'post_its' }, (payload) => {
-        if (payload.new.author_id === userId && payload.new.is_read === true) {
-          showForegroundNotification(
+        if (payload.new && payload.new.author_id === userId && payload.new.is_read === true) {
+          sendNativeNotification(
             `${partnerNameRef.current} read your note ✨`,
-            `ข้อความของคุณถูกเปิดอ่านแล้วจ้า`
+            'ข้อความของคุณถูกเปิดอ่านแล้วจ้า'
           );
         }
       })
       .subscribe();
 
     const calendarChannel = supabase
-      .channel(`calendar-${userId}`)
+      .channel(`calendar-notify-${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'events' }, (payload) => {
-        if (payload.new.created_by !== userId) {
-          showForegroundNotification(
+        if (payload.new && payload.new.created_by !== userId) {
+          sendNativeNotification(
             `New Event From ${partnerNameRef.current} 📅`,
-            payload.new.title
+            payload.new.title || 'นัดหมายใหม่'
           );
         }
       })
@@ -71,24 +71,28 @@ export default function NotificationManager({ userId }: { userId: string }) {
     };
   }, [userId, supabase]);
 
-  const showForegroundNotification = (title: string, body: string) => {
-    const isMuted = localStorage.getItem('notifs_muted') === 'true';
+  const sendNativeNotification = (title: string, body: string) => {
+    const isMuted = typeof window !== 'undefined' && localStorage.getItem('notifs_muted') === 'true';
     if (isMuted) return;
 
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       try {
-        navigator.serviceWorker.ready.then((reg) => {
-          reg.showNotification(title, {
-            body,
-            icon: '/icon.png',
-            badge: '/icon.png',
-            data: { url: '/dashboard' },
-          });
-        }).catch(() => {
-          new Notification(title, { body, icon: '/icon.png' });
+        new Notification(title, {
+          body,
+          icon: '/icon.png',
         });
       } catch (e) {
-        // Ignore fallback errors
+        // Fallback for Mobile/Service Worker
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.ready.then((reg) => {
+            reg.showNotification(title, {
+              body,
+              icon: '/icon.png',
+              badge: '/icon.png',
+              data: { url: '/dashboard' },
+            });
+          }).catch(() => {});
+        }
       }
     }
   };
