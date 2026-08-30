@@ -30,7 +30,9 @@ export default function UnreadNoteOverlay({ userId }: UnreadNoteOverlayProps) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'post_its' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           if (payload.new.author_id !== userId && !payload.new.is_read) {
-            setUnreadNote(payload.new as PostItType);
+            // Only show if no note is currently being displayed
+            // (avoids replacing an unacknowledged note, which would leave it stuck unread in DB)
+            setUnreadNote(prev => prev ?? (payload.new as PostItType));
           }
         } else if (payload.eventType === 'UPDATE') {
           if (payload.new.is_read) {
@@ -109,6 +111,9 @@ export default function UnreadNoteOverlay({ userId }: UnreadNoteOverlayProps) {
     setUnreadNote(null);
     setReplyMessage('');
     setIsSending(false);
+
+    // Re-fetch next pending unread note from DB (in case there are more)
+    fetchUnreadNote();
   };
 
   if (!unreadNote) return null;
