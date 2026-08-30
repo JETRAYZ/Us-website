@@ -40,7 +40,8 @@ export default function PostIt({ userId }: PostItProps) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'post_its' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           if (payload.new.author_id !== userId && !payload.new.is_read) {
-            setUnreadNote(payload.new as PostItType);
+            // Only set if no note is currently being shown (prevent losing unacknowledged notes)
+            setUnreadNote(prev => prev ?? (payload.new as PostItType));
           }
         } else if (payload.eventType === 'UPDATE') {
           if (payload.new.is_read) {
@@ -185,6 +186,8 @@ export default function PostIt({ userId }: PostItProps) {
       }
       setUnreadNote(null);
       setReplyMessage('');
+      // Re-fetch next pending unread note (if any)
+      fetchUnreadNote();
     }
     setIsSending(false);
   };

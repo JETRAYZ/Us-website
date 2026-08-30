@@ -98,25 +98,25 @@ export default function NotificationManager({ userId }: { userId: string }) {
     const isMuted = typeof window !== 'undefined' && localStorage.getItem('notifs_muted') === 'true';
     if (isMuted) return;
 
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification(title, {
-          body,
-          icon: '/icon.png',
+    if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') return;
+
+    // Prefer Service Worker notification (works even when app is in background)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then((reg) => {
+          reg.showNotification(title, {
+            body,
+            icon: '/icon.png',
+            badge: '/icon.png',
+            data: { url: '/dashboard' },
+          });
+        })
+        .catch(() => {
+          // Fallback to in-page notification if SW not ready
+          try { new Notification(title, { body, icon: '/icon.png' }); } catch (_) {}
         });
-      } catch (e) {
-        // Fallback for Mobile/Service Worker
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.ready.then((reg) => {
-            reg.showNotification(title, {
-              body,
-              icon: '/icon.png',
-              badge: '/icon.png',
-              data: { url: '/dashboard' },
-            });
-          }).catch(() => {});
-        }
-      }
+    } else {
+      try { new Notification(title, { body, icon: '/icon.png' }); } catch (_) {}
     }
   };
 
